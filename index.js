@@ -77,7 +77,7 @@ app.post('/api/generate-audio', async (req, res) => {
 });
 
 // ============================================================
-// 3. POST /api/generate-text - HUGGING FACE (Text Generation)
+// 3. POST /api/generate-text - Hugging Face (Text Generation)
 // ============================================================
 app.post('/api/generate-text', async (req, res) => {
   try {
@@ -87,8 +87,7 @@ app.post('/api/generate-text', async (req, res) => {
     Tone: ${tone}. 
     Length: 800-1200 words. 
     Use headings, subheadings, and bullet points where appropriate. 
-    The content must be peaceful, educational, and inspiring. 
-    Write in a warm, professional, and deeply human voice.`;
+    The content must be peaceful, educational, and inspiring.`;
 
     const response = await fetch(
       'https://api-inference.huggingface.co/models/google/flan-t5-large',
