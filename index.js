@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+require('dotenv').config(); // Added: Load environment variables from .env file
 const app = express();
 
 app.use(cors());
@@ -10,13 +11,29 @@ app.use(express.json());
 // ============================================================
 app.get('/api/voices', async (req, res) => {
   try {
+    // Added: Check if API key exists
+    if (!process.env.ELEVENLABS_API_KEY) {
+      return res.status(500).json({ error: 'ElevenLabs API key not configured' });
+    }
+
     const response = await fetch('https://api.elevenlabs.io/v1/voices', {
       headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY }
     });
+    
+    // Added: Check response status
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      return res.status(response.status).json({ 
+        error: 'Failed to fetch voices',
+        details: errorData
+      });
+    }
+    
     const data = await response.json();
     res.json(data.voices || []);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch voices' });
+    console.error('Voices fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch voices', details: error.message });
   }
 });
 
@@ -26,6 +43,19 @@ app.get('/api/voices', async (req, res) => {
 app.post('/api/generate-audio', async (req, res) => {
   try {
     const { voiceId, text } = req.body;
+
+    // Added: Input validation
+    if (!voiceId || !text) {
+      return res.status(400).json({ error: 'voiceId and text are required' });
+    }
+
+    // Added: Check if API keys exist
+    if (!process.env.ELEVENLABS_API_KEY) {
+      return res.status(500).json({ error: 'ElevenLabs API key not configured' });
+    }
+    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+      return res.status(500).json({ error: 'Cloudinary configuration missing' });
+    }
 
     const ttsResponse = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       method: 'POST',
@@ -41,13 +71,26 @@ app.post('/api/generate-audio', async (req, res) => {
     });
 
     if (!ttsResponse.ok) {
-      return res.status(500).json({ error: 'ElevenLabs API error' });
+      const errorData = await ttsResponse.json().catch(() => null);
+      return res.status(ttsResponse.status).json({ 
+        error: 'ElevenLabs API error',
+        details: errorData
+      });
     }
 
     const audioBuffer = await ttsResponse.arrayBuffer();
 
+    // Fixed: Use Buffer instead of Blob (Node.js environment)
+    const audioBlob = Buffer.from(audioBuffer);
+    
+    // Fixed: Using form-data package for Node.js
+    const FormData = require('form-data');
     const formData = new FormData();
-    formData.append('file', new Blob([audioBuffer], { type: 'audio/mp3' }));
+    formData.append('file', audioBlob, {
+      filename: 'audio.mp3',
+      contentType: 'audio/mpeg'
+    });
+    formData.append('upload_preset', 'peace-voices'); // Fixed: Changed from public_id to upload_preset
     formData.append('public_id', `peace-voices/${Date.now()}`);
 
     const cloudinaryResponse = await fetch(
@@ -56,15 +99,20 @@ app.post('/api/generate-audio', async (req, res) => {
         method: 'POST',
         body: formData,
         headers: {
-          Authorization: `Basic ${btoa(
+          ...formData.getHeaders(),
+          Authorization: `Basic ${Buffer.from(
             process.env.CLOUDINARY_API_KEY + ':' + process.env.CLOUDINARY_API_SECRET
-          )}`
+          ).toString('base64')}`
         }
       }
     );
 
     if (!cloudinaryResponse.ok) {
-      return res.status(500).json({ error: 'Cloudinary upload failed' });
+      const errorData = await cloudinaryResponse.json().catch(() => null);
+      return res.status(cloudinaryResponse.status).json({ 
+        error: 'Cloudinary upload failed',
+        details: errorData
+      });
     }
 
     const cloudinaryData = await cloudinaryResponse.json();
@@ -72,6 +120,7 @@ app.post('/api/generate-audio', async (req, res) => {
     res.json({ success: true, audioUrl: cloudinaryData.secure_url });
 
   } catch (error) {
+    console.error('Audio generation error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -83,8 +132,18 @@ app.post('/api/generate-text', async (req, res) => {
   try {
     const { type, topic, tone } = req.body;
 
+    // Added: Input validation
+    if (!type || !topic) {
+      return res.status(400).json({ error: 'type and topic are required' });
+    }
+
+    // Added: Check if API key exists
+    if (!process.env.HUGGINGFACE_API_KEY) {
+      return res.status(500).json({ error: 'Hugging Face API key not configured' });
+    }
+
     const prompt = `Write a premium, high-quality ${type} on the topic: "${topic}". 
-    Tone: ${tone}. 
+    Tone: ${tone || 'neutral'}. 
     Length: 800-1200 words. 
     Use headings, subheadings, and bullet points where appropriate. 
     The content must be peaceful, educational, and inspiring.`;
@@ -99,13 +158,21 @@ app.post('/api/generate-text', async (req, res) => {
         },
         body: JSON.stringify({
           inputs: prompt,
-          parameters: { max_length: 1000, temperature: 0.7 }
+          parameters: { 
+            max_length: 1000, 
+            temperature: 0.7,
+            return_full_text: false // Added: Don't return the prompt in the output
+          }
         })
       }
     );
 
     if (!response.ok) {
-      return res.status(500).json({ error: 'Hugging Face API error' });
+      const errorData = await response.json().catch(() => null);
+      return res.status(response.status).json({ 
+        error: 'Hugging Face API error',
+        details: errorData
+      });
     }
 
     const data = await response.json();
@@ -114,6 +181,7 @@ app.post('/api/generate-text', async (req, res) => {
     res.json({ success: true, content });
 
   } catch (error) {
+    console.error('Text generation error:', error);
     res.status(500).json({ error: error.message });
   }
 });
