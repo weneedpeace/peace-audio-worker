@@ -33,7 +33,7 @@ app.get('/api/voices', async (req, res) => {
 // Generate Audio
 app.post('/api/generate-audio', async (req, res) => {
   try {
-    const { text } = req.body;
+    const { text, language = 'English' } = req.body;
 
     if (!text) return res.status(400).json({ error: 'Text is required' });
 
@@ -65,4 +65,4 @@ app.post('/api/generate-audio', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`✅ Peace Audio Worker running on port ${PORT}`));
