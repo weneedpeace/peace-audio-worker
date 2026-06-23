@@ -14,22 +14,27 @@ cloudinary.config({
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 
-// Your peace voices (Supabase + fallback)
+// Peace Voices Endpoint (redirect or proxy)
 app.get('/api/voices', async (req, res) => {
-  res.redirect('https://peace-audio-worker.onrender.com/api/voices'); // or keep your original
+  try {
+    const response = await fetch('https://peace-audio-worker.onrender.com/api/voices');
+    const data = await response.json();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to fetch voices' });
+  }
 });
 
-// Main Generate Audio
+// Generate Audio
 app.post('/api/generate-audio', async (req, res) => {
   try {
     const { text, language = 'English' } = req.body;
-    if (!text) return res.status(400).json({ error: 'Text required' });
+    if (!text) return res.status(400).json({ error: 'Text is required' });
 
-    // Voice mapping (ElevenLabs works well with multilingual_v2)
     const voiceMap = {
       'Amharic': '21m00Tcm4TlvDq8ikWAM',
       'Oromo': '21m00Tcm4TlvDq8ikWAM',
-      'English': '21m00Tcm4TlvDq8ikWAM', // Rachel - excellent
+      'English': '21m00Tcm4TlvDq8ikWAM',
       'default': '21m00Tcm4TlvDq8ikWAM'
     };
 
@@ -48,21 +53,17 @@ app.post('/api/generate-audio', async (req, res) => {
       })
     });
 
-    if (!ttsRes.ok) throw new Error('ElevenLabs failed');
+    if (!ttsRes.ok) throw new Error('ElevenLabs error');
 
     const audioBuffer = Buffer.from(await ttsRes.arrayBuffer());
 
-    // Upload to Cloudinary
     const uploadResult = await new Promise((resolve, reject) => {
-      cloudinary.uploader.upload_stream(
-        {
-          resource_type: 'video', // audio works as video
-          folder: 'peace-voices',
-          public_id: `voice-${Date.now()}`,
-          format: 'mp3'
-        },
-        (error, result) => error ? reject(error) : resolve(result)
-      ).end(audioBuffer);
+      cloudinary.uploader.upload_stream({
+        resource_type: 'video',
+        folder: 'peace-voices',
+        public_id: `voice-${Date.now()}`,
+        format: 'mp3'
+      }, (error, result) => error ? reject(error) : resolve(result)).end(audioBuffer);
     });
 
     res.json({ audio_url: uploadResult.secure_url });
@@ -74,4 +75,4 @@ app.post('/api/generate-audio', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ TTS Worker running on ${PORT}`));
+app.listen(PORT, () => console.log(`✅ Peace Audio Worker running on port ${PORT}`));
