@@ -6,18 +6,25 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
+// Status page
+app.get('/', (req, res) => {
+  res.send('<h1>✅ Peace Audio Worker is Running</h1><p>POST to /api/generate-audio</p>');
 });
 
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
-
-// Peace Voices Endpoint (redirect or proxy)
+// Voices (from your original source)
 app.get('/api/voices', async (req, res) => {
   try {
-    const response = await fetch('https://peace-audio-worker.onrender.com/api/voices');
+    // Use your Supabase directly to avoid loops
+    const SUPABASE_URL = 'https://rnafjznurgnrdonyxfgs.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJuYWZqem51cmducmRvbnl4ZmdzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NzA1OTEsImV4cCI6MjA5NzM0NjU5MX0.lfJYkGg37CdOwsrvcgvD7I4T054yrPQj-ztfsSo2S0s';
+    
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/ethiopian_voices?select=*&is_published=eq.true&order=created_at.desc`, {
+      headers: { 
+        'apikey': SUPABASE_KEY, 
+        'Authorization': `Bearer ${SUPABASE_KEY}` 
+      }
+    });
+    
     const data = await response.json();
     res.json(data);
   } catch (e) {
@@ -25,11 +32,13 @@ app.get('/api/voices', async (req, res) => {
   }
 });
 
-// Generate Audio
+// Generate Audio Endpoint
 app.post('/api/generate-audio', async (req, res) => {
   try {
     const { text, language = 'English' } = req.body;
-    if (!text) return res.status(400).json({ error: 'Text is required' });
+    if (!text || text.length < 5) {
+      return res.status(400).json({ error: 'Valid text is required' });
+    }
 
     const voiceMap = {
       'Amharic': '21m00Tcm4TlvDq8ikWAM',
@@ -43,7 +52,7 @@ app.post('/api/generate-audio', async (req, res) => {
     const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       method: 'POST',
       headers: {
-        'xi-api-key': ELEVENLABS_API_KEY,
+        'xi-api-key': process.env.ELEVENLABS_API_KEY,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
@@ -53,10 +62,11 @@ app.post('/api/generate-audio', async (req, res) => {
       })
     });
 
-    if (!ttsRes.ok) throw new Error('ElevenLabs error');
+    if (!ttsRes.ok) throw new Error('ElevenLabs failed');
 
     const audioBuffer = Buffer.from(await ttsRes.arrayBuffer());
 
+    // Upload to Cloudinary
     const uploadResult = await new Promise((resolve, reject) => {
       cloudinary.uploader.upload_stream({
         resource_type: 'video',
@@ -70,7 +80,7 @@ app.post('/api/generate-audio', async (req, res) => {
 
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message || 'Audio generation failed' });
   }
 });
 
